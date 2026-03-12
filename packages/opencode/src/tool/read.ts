@@ -3,6 +3,7 @@ import { createReadStream } from "fs"
 import * as fs from "fs/promises"
 import * as path from "path"
 import { createInterface } from "readline"
+import { spawn } from "child_process" // Node.js built in way to run an external program as a subprocess (go binary)
 import { Tool } from "./tool"
 import { LSP } from "../lsp"
 import { FileTime } from "../file/time"
@@ -195,6 +196,21 @@ export const ReadTool = Tool.define("read", {
     })
     const preview = raw.slice(0, 20).join("\n")
 
+    // this is the point where the file has been read into memory, but before opencode forms the output string for the llm. (comes this late because the preview variable is essential)
+    // calling runContextParser with the filepath. if the file has tags it returns a filtered string and we return that to the llm and skip the rest, if the parser returns null (no tags, binary not set, other error) the execution pivots back to the original code. 
+    const parsedOutput = await runContextParser(filepath, instructions)
+    if (parsedOutput !== null) {
+      return {
+        title,
+        output: parsedOutput,
+        metadata: {
+          preview,
+          truncated: false,
+          loaded: instructions.map((i) => i.filepath),
+        },
+      }
+    }
+
     let output = [`<path>${filepath}</path>`, `<type>file</type>`, "<content>"].join("\n")
     output += content.join("\n")
 
@@ -231,6 +247,71 @@ export const ReadTool = Tool.define("read", {
     }
   },
 })
+
+// Component shape returned by the individual-component parser.
+interface IndividualComponent {
+  Body: string
+  Description: string
+  Filename: string
+}
+
+// seperate function to keep execution logic clean, bridges parser and opencode. has many "quick exit" points where it returns null if certain conditions are not met, which signals to the main execution function to pivot back to the original file reading logic instead of using the parsed output.
+
+// Runs the  individual-component parser binary on a single file.
+// Returns a formatted string of tagged components for the LLM, or null if:
+//   - CONTEXT_PARSER_BIN env var is not set
+//   - the binary is not executable / not found
+//   - the file contains no tags
+async function runContextParser(
+  filepath: string,
+  instructions: { filepath: string; content: string }[],
+): Promise<string | null> {
+  const bin = process.env.CONTEXT_PARSER_BIN  // reads env var, have to return null if not found (quick exit)
+  if (!bin) return null
+
+  return new Promise((resolve) => {
+    const proc = spawn(bin, [filepath], { stdio: ["ignore", "pipe", "pipe"] }) // spawn the go binary, ignore stdin and pipe back stdout stderr
+    let stdout = ""
+    let stderr = ""
+
+    // collects stdout and stderr from the binary as it runs
+    proc.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString() })
+    proc.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString() })
+
+    proc.on("error", () => resolve(null)) // binary not found or executable (quick exit)
+    proc.on("close", (code) => {
+      if (code !== 0) return resolve(null) // binary found but returned an error code (quick exit)
+
+      let parsed: Record<string, Record<string, IndividualComponent>>
+      try {
+        parsed = JSON.parse(stdout) // checks if json in stdout (from binary) is valid, if it is not it returns null (quick exit)
+      } catch {
+        return resolve(null)
+      }
+
+      const components = parsed[filepath]
+      if (!components || Object.keys(components).length === 0) return resolve(null) // if no tags in file, return null (quick exit)
+      
+      // actually builds the output string for the llm, which includes the original filepath, a type tag, and then each component found in the file with its own tags and description if provided. also includes any relevant instructions at the end (same "system-reminder" logic original code uses).
+
+      let output = [`<path>${filepath}</path>`, `<type>file</type>`, "<content>"].join("\n")
+      for (const [name, comp] of Object.entries(components)) {
+        const header = comp.Description
+          ? `[component: ${name}, description: "${comp.Description}"]`
+          : `[component: ${name}]`
+        output += `\n${header}\n${comp.Body}\n`
+      }
+      output += `\n(${Object.keys(components).length} component(s) extracted — untagged lines omitted)`
+      output += "\n</content>"
+
+      if (instructions.length > 0) {
+        output += `\n\n<system-reminder>\n${instructions.map((i) => i.content).join("\n\n")}\n</system-reminder>`
+      }
+
+      resolve(output)
+    })
+  })
+}
 
 async function isBinaryFile(filepath: string, fileSize: number): Promise<boolean> {
   const ext = path.extname(filepath).toLowerCase()
