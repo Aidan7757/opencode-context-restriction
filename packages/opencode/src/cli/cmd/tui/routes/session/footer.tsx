@@ -5,6 +5,9 @@ import { useDirectory } from "../../context/directory"
 import { useConnected } from "../../component/dialog-model"
 import { createStore } from "solid-js/store"
 import { useRoute } from "../../context/route"
+import { useTag } from "../../context/tag"
+import { useDialog } from "../../ui/dialog"
+import { DialogTag } from "../../component/dialog-tag"
 
 export function Footer() {
   const { theme } = useTheme()
@@ -19,6 +22,8 @@ export function Footer() {
   })
   const directory = useDirectory()
   const connected = useConnected()
+  const tag = useTag()
+  const dialog = useDialog()
 
   const [store, setStore] = createStore({
     welcome: false,
@@ -82,6 +87,15 @@ export function Footer() {
                 {mcp()} MCP
               </text>
             </Show>
+            <text
+              fg={tag.selectedCount() > 0 ? theme.primary : theme.textMuted}
+              onMouseUp={() => dialog.replace(() => <DialogTag />)}
+            >
+              <span style={{ fg: tag.selectedCount() > 0 ? theme.primary : theme.textMuted }}>
+                {tag.selectedCount() > 0 ? "●" : "○"}
+              </span>{" "}
+              {tag.selectedCount()} Tags
+            </text>
             <text fg={theme.textMuted}>/status</text>
           </Match>
         </Switch>

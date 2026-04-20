@@ -14,6 +14,9 @@ import { usePromptRef } from "../context/prompt"
 import { Installation } from "@/installation"
 import { useKV } from "../context/kv"
 import { useCommandDialog } from "../component/dialog-command"
+import { useTag } from "@tui/context/tag"
+import { useDialog } from "../ui/dialog"
+import { DialogTag } from "../component/dialog-tag"
 
 // TODO: what is the best way to do this?
 let once = false
@@ -25,6 +28,8 @@ export function Home() {
   const route = useRouteData("home")
   const promptRef = usePromptRef()
   const command = useCommandDialog()
+  const tag = useTag()
+  const dialog = useDialog()
   const mcp = createMemo(() => Object.keys(sync.data.mcp).length > 0)
   const mcpError = createMemo(() => {
     return Object.values(sync.data.mcp).some((x) => x.status === "failed")
@@ -134,6 +139,15 @@ export function Home() {
             </text>
             <text fg={theme.textMuted}>/status</text>
           </Show>
+          <text
+            fg={tag.selectedCount() > 0 ? theme.primary : theme.textMuted}
+            onMouseUp={() => dialog.replace(() => <DialogTag />)}
+          >
+            <span style={{ fg: tag.selectedCount() > 0 ? theme.primary : theme.textMuted }}>
+              {tag.selectedCount() > 0 ? "●" : "○"}
+            </span>{" "}
+            {tag.selectedCount()} {tag.selectedCount() === 1 ? "tag" : "tags"}
+          </text>
         </box>
         <box flexGrow={1} />
         <box flexShrink={0}>

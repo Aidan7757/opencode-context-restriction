@@ -38,6 +38,8 @@ import { ArgsProvider, useArgs, type Args } from "./context/args"
 import open from "open"
 import { writeHeapSnapshot } from "v8"
 import { PromptRefProvider, usePromptRef } from "./context/prompt"
+import { TagProvider } from "@tui/context/tag"
+import { DialogTag } from "@tui/component/dialog-tag"
 
 async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
   // can't set raw mode if not a TTY
@@ -148,21 +150,23 @@ export function tui(input: {
                         <SyncProvider>
                           <ThemeProvider mode={mode}>
                             <LocalProvider>
-                              <KeybindProvider>
-                                <PromptStashProvider>
-                                  <DialogProvider>
-                                    <CommandProvider>
-                                      <FrecencyProvider>
-                                        <PromptHistoryProvider>
-                                          <PromptRefProvider>
-                                            <App />
-                                          </PromptRefProvider>
-                                        </PromptHistoryProvider>
-                                      </FrecencyProvider>
-                                    </CommandProvider>
-                                  </DialogProvider>
-                                </PromptStashProvider>
-                              </KeybindProvider>
+                              <TagProvider>
+                                <KeybindProvider>
+                                  <PromptStashProvider>
+                                    <DialogProvider>
+                                      <CommandProvider>
+                                        <FrecencyProvider>
+                                          <PromptHistoryProvider>
+                                            <PromptRefProvider>
+                                              <App />
+                                            </PromptRefProvider>
+                                          </PromptHistoryProvider>
+                                        </FrecencyProvider>
+                                      </CommandProvider>
+                                    </DialogProvider>
+                                  </PromptStashProvider>
+                                </KeybindProvider>
+                              </TagProvider>
                             </LocalProvider>
                           </ThemeProvider>
                         </SyncProvider>
@@ -354,6 +358,17 @@ function App() {
 
   const connected = useConnected()
   command.register(() => [
+    {
+      title: "Select tags",
+      value: "tags.select",
+      category: "Context",
+      slash: {
+        name: "tags",
+      },
+      onSelect: () => {
+        dialog.replace(() => <DialogTag />)
+      },
+    },
     {
       title: "Switch session",
       value: "session.list",

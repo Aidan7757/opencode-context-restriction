@@ -1,43 +1,57 @@
-import { createMemo, createResource } from "solid-js"
+import { createMemo } from "solid-js"
 import { DialogSelect } from "@tui/ui/dialog-select"
 import { useDialog } from "@tui/ui/dialog"
-import { useSDK } from "@tui/context/sdk"
-import { createStore } from "solid-js/store"
+import { useTag } from "@tui/context/tag"
+import { useTheme } from "@tui/context/theme"
+import path from "path"
 
-export function DialogTag(props: { onSelect?: (value: string) => void }) {
-  const sdk = useSDK()
+export function DialogTag() {
   const dialog = useDialog()
-
-  const [store] = createStore({
-    filter: "",
-  })
-
-  const [files] = createResource(
-    () => [store.filter],
-    async () => {
-      const result = await sdk.client.find.files({
-        query: store.filter,
-      })
-      if (result.error) return []
-      const sliced = (result.data ?? []).slice(0, 5)
-      return sliced
-    },
-  )
+  const tag = useTag()
+  const { theme } = useTheme()
 
   const options = createMemo(() =>
-    (files() ?? []).map((file) => ({
-      value: file,
-      title: file,
-    })),
+    tag.tags.map((t) => {
+      const selected = tag.isSelected(t.name)
+      return {
+        value: t.name,
+        title: t.name,
+        description: t.description || undefined,
+        // Group by filename so related tags are listed together.
+        category: path.basename(t.filename),
+        gutter: (
+          <text fg={selected ? theme.primary : theme.textMuted}>{selected ? "●" : "○"}</text>
+        ),
+      }
+    }),
   )
 
   return (
     <DialogSelect
-      title="Autocomplete"
+      title={`Select Tags  ${tag.selectedCount() > 0 ? `(${tag.selectedCount()} selected)` : ""}`}
+      placeholder="Filter tags..."
       options={options()}
+      // Space toggles without closing; Enter also toggles (dialog stays open for multi-select).
+      keybind={[
+        {
+          title: "toggle",
+          keybind: {
+            name: "space",
+            ctrl: false,
+            meta: false,
+            shift: false,
+            super: false,
+            leader: false,
+          },
+          onTrigger: (option) => {
+            tag.toggle(option.value)
+          },
+        },
+      ]}
       onSelect={(option) => {
-        props.onSelect?.(option.value)
-        dialog.clear()
+        tag.toggle(option.value)
+        // Stay open so the user can select multiple tags.
+        // Close via esc when done.
       }}
     />
   )

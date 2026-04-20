@@ -34,6 +34,8 @@ import { useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv"
 import { useTextareaKeybindings } from "../textarea-keybindings"
 import { DialogSkill } from "../dialog-skill"
+import { TagService } from "@/tag/service"
+import { useTag } from "@tui/context/tag"
 
 export type PromptProps = {
   sessionID?: string
@@ -77,6 +79,7 @@ export function Prompt(props: PromptProps) {
   const renderer = useRenderer()
   const { theme, syntax } = useTheme()
   const kv = useKV()
+  const tag = useTag()
 
   function promptModelWarning() {
     toast.show({
@@ -613,6 +616,7 @@ export function Prompt(props: PromptProps) {
           })),
       })
     } else {
+      const tagContext = TagService.getContext()
       sdk.client.session
         .prompt({
           sessionID,
@@ -621,6 +625,7 @@ export function Prompt(props: PromptProps) {
           agent: local.agent.current().name,
           model: selectedModel,
           variant,
+          system: tagContext || undefined,
           parts: [
             {
               id: Identifier.ascending("part"),
@@ -1138,6 +1143,9 @@ export function Prompt(props: PromptProps) {
                   </text>
                   <text fg={theme.text}>
                     {keybind.print("command_list")} <span style={{ fg: theme.textMuted }}>commands</span>
+                  </text>
+                  <text fg={tag.selectedCount() > 0 ? theme.primary : theme.textMuted}>
+                    ● {tag.selectedCount()} {tag.selectedCount() === 1 ? "tag" : "tags"}
                   </text>
                 </Match>
                 <Match when={store.mode === "shell"}>
