@@ -70,10 +70,11 @@ export namespace LLM {
         // use agent prompt otherwise provider prompt
         // For Codex sessions, skip SystemPrompt.provider() since it's sent via options.instructions
         ...(input.agent.prompt ? [input.agent.prompt] : isCodex ? [] : SystemPrompt.provider(input.model)),
+        // selected tag context from last user message — placed before other dynamic system content
+        // so the model reads it before instructions that might encourage file reads
+        ...(input.user.system ? [input.user.system] : []),
         // any custom prompt passed into this call
         ...input.system,
-        // any custom prompt from last user message
-        ...(input.user.system ? [input.user.system] : []),
       ]
         .filter((x) => x)
         .join("\n"),

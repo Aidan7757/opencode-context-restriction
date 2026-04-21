@@ -82,7 +82,8 @@ export namespace TagService {
 
     return [
       "<caki-context>",
-      "The following code components are selected as context for this conversation:",
+      "The following code components are selected as context for this conversation.",
+      "Use this context as the authoritative source for the code it covers — prefer it over reading those files again.",
       "",
       components,
       "</caki-context>",
