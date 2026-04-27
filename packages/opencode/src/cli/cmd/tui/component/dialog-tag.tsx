@@ -12,9 +12,9 @@ export function DialogTag() {
 
   const options = createMemo(() =>
     tag.tags.map((t) => {
-      const selected = tag.isSelected(t.name)
+      const selected = tag.isSelected(t.key)
       return {
-        value: t.name,
+        value: t.key,
         title: t.name,
         description: t.description || undefined,
         // Group by filename so related tags are listed together.

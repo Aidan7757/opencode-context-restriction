@@ -29,7 +29,7 @@ export function TagProvider(props: { children: JSX.Element }) {
     const unsubscribe = TagService.onChange(() => {
       setStore({
         tags: TagService.getAll(),
-        selected: TagService.getSelected().map((t) => t.name),
+        selected: TagService.getSelected().map((t) => t.key),
       })
     })
 

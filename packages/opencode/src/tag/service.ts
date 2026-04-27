@@ -2,11 +2,14 @@ import chokidar from "chokidar"
 import path from "path"
 
 export type Tag = {
+  key: string   // unique: "<filepath>::<tagName>"
   name: string
   body: string
   description: string
   startOffset: number
   endOffset: number
+  startLine: number  // 1-indexed line where body begins
+  endLine: number    // 1-indexed line of closing tag
   filename: string
 }
 
@@ -43,27 +46,27 @@ export namespace TagService {
   }
 
   export function getSelected(): Tag[] {
-    return Array.from(_selected).flatMap((name) => {
-      const tag = _tags.get(name)
+    return Array.from(_selected).flatMap((key) => {
+      const tag = _tags.get(key)
       return tag ? [tag] : []
     })
   }
 
-  export function isSelected(name: string): boolean {
-    return _selected.has(name)
+  export function isSelected(key: string): boolean {
+    return _selected.has(key)
   }
 
-  export function toggle(name: string): void {
-    if (_selected.has(name)) {
-      _selected.delete(name)
+  export function toggle(key: string): void {
+    if (_selected.has(key)) {
+      _selected.delete(key)
     } else {
-      _selected.add(name)
+      _selected.add(key)
     }
     notify()
   }
 
-  export function setSelected(names: string[]): void {
-    _selected = new Set(names.filter((n) => _tags.has(n)))
+  export function setSelected(keys: string[]): void {
+    _selected = new Set(keys.filter((k) => _tags.has(k)))
     notify()
   }
 
@@ -76,14 +79,16 @@ export namespace TagService {
       .map((tag) => {
         const relPath = _projectDir ? path.relative(_projectDir, tag.filename) : tag.filename
         const descAttr = tag.description ? ` description="${tag.description}"` : ""
-        return `<component name="${tag.name}" file="${relPath}"${descAttr}>\n${tag.body}\n</component>`
+        return `<component name="${tag.name}" file="${relPath}" startLine="${tag.startLine}" endLine="${tag.endLine}"${descAttr}>\n${tag.body}\n</component>`
       })
       .join("\n\n")
 
     return [
       "<caki-context>",
       "The following code components are selected as context for this conversation.",
-      "Use this context as the authoritative source for the code it covers — prefer it over reading those files again.",
+      "Each component includes its exact location: file path and line range (startLine/endLine, 1-indexed).",
+      "When you need to read surrounding context or make edits, use the read tool with",
+      "filePath set to the component's file and offset set to startLine — no need to search.",
       "",
       components,
       "</caki-context>",
@@ -95,6 +100,15 @@ export namespace TagService {
       const fs = require("fs") as typeof import("fs")
       fs.appendFileSync("/tmp/caki-debug.log", msg + "\n")
     } catch {}
+  }
+
+  function byteOffsetToLine(content: Uint8Array, byteOffset: number): number {
+    let line = 1
+    const end = Math.min(byteOffset, content.length)
+    for (let i = 0; i < end; i++) {
+      if (content[i] === 10) line++ // newline byte
+    }
+    return line
   }
 
   async function runParser(dir: string): Promise<void> {
@@ -121,16 +135,33 @@ export namespace TagService {
       }
 
       const result: ParseResult = JSON.parse(stdout)
+
+      // Read each tagged file once to convert byte offsets → line numbers.
+      const fileContents = new Map<string, Uint8Array>()
+      for (const filepath of Object.keys(result)) {
+        try {
+          const buf = await Bun.file(filepath).arrayBuffer()
+          fileContents.set(filepath, new Uint8Array(buf))
+        } catch {
+          fileContents.set(filepath, new Uint8Array(0))
+        }
+      }
+
       _tags = new Map()
 
       for (const [filepath, components] of Object.entries(result)) {
+        const content = fileContents.get(filepath) ?? new Uint8Array(0)
         for (const [tagName, comp] of Object.entries(components)) {
-          _tags.set(tagName, {
+          const key = `${filepath}::${tagName}`
+          _tags.set(key, {
+            key,
             name: tagName,
             body: comp.Body,
             description: comp.Description,
             startOffset: comp.StartOffset,
             endOffset: comp.EndOffset,
+            startLine: byteOffsetToLine(content, comp.StartOffset),
+            endLine: byteOffsetToLine(content, comp.EndOffset),
             filename: comp.Filename || filepath,
           })
         }
@@ -139,8 +170,8 @@ export namespace TagService {
       dbg(`[caki] parsed ${_tags.size} tags`)
 
       // Prune selected tags that no longer exist after re-parse.
-      for (const name of _selected) {
-        if (!_tags.has(name)) _selected.delete(name)
+      for (const key of _selected) {
+        if (!_tags.has(key)) _selected.delete(key)
       }
     } catch (e) {
       dbg(`[caki] parser error: ${e}`)
