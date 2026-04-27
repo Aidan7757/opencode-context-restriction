@@ -24,6 +24,48 @@ function normalizeLineEndings(text: string): string {
   return text.replaceAll("\r\n", "\n")
 }
 
+// CAKI research team edits -- tag security for editing
+export function validateTags(contentOld: string, contentNew: string): string | null {
+  if (!process.env.CONTEXT_PARSER_ENFORCE_TAGS) return null
+
+  function extractOpen(content: string): Set<string> {
+    const tags = new Set<string>()
+    let match: RegExpExecArray | null
+    const pattern = /\/\/ <(\w+)>/g
+    while ((match = pattern.exec(content)) !== null) tags.add(match[1])
+    return tags
+  }
+
+  function extractClose(content: string): Set<string> {
+    const tags = new Set<string>()
+    let match: RegExpExecArray | null
+    const pattern = /\/\/ <\/(\w+)>/g
+    while ((match = pattern.exec(content)) !== null) tags.add(match[1])
+    return tags
+  }
+
+  const oldOpen  = extractOpen(contentOld)
+  const newOpen  = extractOpen(contentNew)
+  const newClose = extractClose(contentNew)
+
+  const issues: string[] = []
+
+  // Tags that existed before the edit but are now completely absent
+  const removed = [...oldOpen].filter(tag => !newOpen.has(tag) && !newClose.has(tag))
+  if (removed.length > 0) issues.push(`Completely removed: ${removed.join(", ")}`)
+
+  // Opening tags in new content with no matching closer
+  const unclosed = [...newOpen].filter(tag => !newClose.has(tag))
+  if (unclosed.length > 0) issues.push(`Unclosed (missing closer): ${unclosed.join(", ")}`)
+
+  // Closing tags in new content with no matching opener
+  const orphaned = [...newClose].filter(tag => !newOpen.has(tag))
+  if (orphaned.length > 0) issues.push(`Orphaned closer (missing opener): ${orphaned.join(", ")}`)
+
+  if (issues.length === 0) return null
+  return `\n\n[TAG WARNING] Tag structure corrupted — restore before proceeding:\n${issues.map(i => `  - ${i}`).join("\n")}`
+}
+
 export const EditTool = Tool.define("edit", {
   description: DESCRIPTION,
   parameters: z.object({
@@ -72,7 +114,6 @@ export const EditTool = Tool.define("edit", {
         FileTime.read(ctx.sessionID, filePath)
         return
       }
-
       const stats = Filesystem.stat(filePath)
       if (!stats) throw new Error(`File ${filePath} not found`)
       if (stats.isDirectory()) throw new Error(`Path is a directory, not a file: ${filePath}`)
@@ -140,6 +181,9 @@ export const EditTool = Tool.define("edit", {
         errors.length > MAX_DIAGNOSTICS_PER_FILE ? `\n... and ${errors.length - MAX_DIAGNOSTICS_PER_FILE} more` : ""
       output += `\n\nLSP errors detected in this file, please fix:\n<diagnostics file="${filePath}">\n${limited.map(LSP.Diagnostic.pretty).join("\n")}${suffix}\n</diagnostics>`
     }
+
+    const tagWarning = validateTags(contentOld, contentNew)
+    if (tagWarning) output += tagWarning
 
     return {
       metadata: {

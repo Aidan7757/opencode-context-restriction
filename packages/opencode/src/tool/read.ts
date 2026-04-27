@@ -200,9 +200,14 @@ export const ReadTool = Tool.define("read", {
     // calling runContextParser with the filepath. if the file has tags it returns a filtered string and we return that to the llm and skip the rest, if the parser returns null (no tags, binary not set, other error) the execution pivots back to the original code. 
     const parsedOutput = await runContextParser(filepath, instructions)
     if (parsedOutput !== null) {
+      LSP.touchFile(filepath, false)
+      FileTime.read(ctx.sessionID, filepath)
+      const enforceNote = process.env.CONTEXT_PARSER_ENFORCE_TAGS
+        ? "\n\n[TAG RULE] This file uses semantic tags (// <name> ... // </name>). Preserve all tags exactly when editing — do not remove, merge, or leave any unclosed."
+        : ""
       return {
         title,
-        output: parsedOutput,
+        output: parsedOutput + enforceNote,
         metadata: {
           preview,
           truncated: false,
@@ -296,12 +301,10 @@ async function runContextParser(
 
       let output = [`<path>${filepath}</path>`, `<type>file</type>`, "<content>"].join("\n")
       for (const [name, comp] of Object.entries(components)) {
-        const header = comp.Description
-          ? `[component: ${name}, description: "${comp.Description}"]`
-          : `[component: ${name}]`
-        output += `\n${header}\n${comp.Body}\n`
+        const descNote = comp.Description ? ` // ${comp.Description}` : ""
+        output += `\n// <${name}>${descNote}\n${comp.Body}\n// </${name}>\n`
       }
-      output += `\n(${Object.keys(components).length} component(s) extracted — untagged lines omitted)`
+      output += `\n(${Object.keys(components).length} component(s) extracted — untagged lines omitted. This is the complete file. Do not attempt to read further with offset/limit. Component bodies appear exactly as in the file and can be used directly in edit operations.)`
       output += "\n</content>"
 
       if (instructions.length > 0) {

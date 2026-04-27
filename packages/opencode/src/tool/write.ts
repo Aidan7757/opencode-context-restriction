@@ -10,8 +10,9 @@ import { FileWatcher } from "../file/watcher"
 import { FileTime } from "../file/time"
 import { Filesystem } from "../util/filesystem"
 import { Instance } from "../project/instance"
-import { trimDiff } from "./edit"
 import { assertExternalDirectory } from "./external-directory"
+import { trimDiff, validateTags } from "./edit"
+
 
 const MAX_DIAGNOSTICS_PER_FILE = 20
 const MAX_PROJECT_DIAGNOSTICS_FILES = 5
@@ -70,6 +71,9 @@ export const WriteTool = Tool.define("write", {
       projectDiagnosticsCount++
       output += `\n\nLSP errors detected in other files:\n<diagnostics file="${file}">\n${limited.map(LSP.Diagnostic.pretty).join("\n")}${suffix}\n</diagnostics>`
     }
+    // after full file writes -- check for tag removal 
+    const tagWarning = validateTags(contentOld, params.content)
+    if (tagWarning) output += tagWarning
 
     return {
       title: path.relative(Instance.worktree, filepath),
